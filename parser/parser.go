@@ -113,6 +113,8 @@ func (p *Parser) ParseStatement() ast.Statement {
 }
 
 func (p *Parser) ParseExpressionStatement() *ast.ExpressionStatement {
+	defer unTrace(trace("parseExpressionStatement"))
+
 	stmt := &ast.ExpressionStatement{Token: p.curToken}
 	stmt.Expression = p.parseExpression(LOWEST)
 
@@ -122,7 +124,12 @@ func (p *Parser) ParseExpressionStatement() *ast.ExpressionStatement {
 	return stmt
 }
 
+// 使用优先级是为了让具有较高优先级的运算符表达式位于树中更高的位置，而较低优先级的运算符表达式位于树中较低的位置
+// precedence表示当前调用中的有约束能力，约束能力越强，当前词法单元右边约束的词法单元，运算符，操作数就越多
+// 与之对应，p.peekPrecedence()为左约束能力
 func (p *Parser) parseExpression(precedence int) ast.Expression {
+	defer unTrace(trace("parseExpression"))
+
 	prefix := p.prefixParseFns[p.curToken.Type]
 	if prefix == nil {
 		p.noPreFixParseFnError(p.curToken.Type)
@@ -133,6 +140,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 	// 尝试为下一个词法单元查找infixParseFns
 	// 如果找到了这个函数，就用prefixParseFn返回的表达式作为参数来调用这个函数
 	// 循环重复执行，直到遇见优先级更低的词法单元
+	// 例子：1+2+3, 在解析到第一个+时，precedence 与p.peekPrecedence()相等，因为都是+号，所以leftExp是2
 	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() {
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
@@ -214,6 +222,8 @@ func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) {
 
 // token.INT相关联的解析函数
 func (p *Parser) parseIntegerLiteral() ast.Expression {
+	defer unTrace(trace("parseIntegerLiteral"))
+
 	lit := &ast.IntegerLiteral{Token: p.curToken}
 
 	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
@@ -232,6 +242,8 @@ func (p *Parser) noPreFixParseFnError(t token.TokenType) {
 }
 
 func (p *Parser) parsePrefixExpression() ast.Expression {
+	defer unTrace(trace("parsePrefixExpression"))
+
 	expression := &ast.PrefixExpression{
 		Token:    p.curToken,
 		Operator: p.curToken.Literal,
@@ -244,13 +256,17 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	defer unTrace(trace("parseInfixExpression"))
+
 	expression := &ast.InfixExpression{
 		Token:    p.curToken,
 		Operator: p.curToken.Literal,
 		Left:     left,
 	}
 
+	// 保存优先级
 	precedence := p.curPrecedence()
+
 	p.nextToken()
 	expression.Right = p.parseExpression(precedence)
 
