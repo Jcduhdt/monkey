@@ -5,6 +5,9 @@ development by go
 ## ast
 - abstract syntax code 
 - 抽象语法树
+## evaluator
+- 求值器
+- 将表达式进行取值
 ## lexer
 - 词法分析器 
 - 将源代码转换成词法单元
