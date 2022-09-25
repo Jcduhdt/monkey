@@ -15,51 +15,74 @@ var (
 	FALSE = &object.Boolean{Value: false}
 )
 
-func Eval(node ast.Node) object.Object {
+func Eval(node ast.Node, env *object.Environment) object.Object {
 	switch nodeT := node.(type) {
 	case *ast.Program:
-		return evalProgram(nodeT)
+		return evalProgram(nodeT, env)
 	case *ast.ExpressionStatement:
-		return Eval(nodeT.Expression)
+		return Eval(nodeT.Expression, env)
 	case *ast.IntegerLiteral:
 		return &object.Integer{Value: nodeT.Value}
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(nodeT.Value)
 	case *ast.PrefixExpression:
-		right := Eval(nodeT.Right)
+		right := Eval(nodeT.Right, env)
 		if isError(right) {
 			return right
 		}
 		return evalPrefixExpression(nodeT.Operator, right)
 	case *ast.InfixExpression:
-		left := Eval(nodeT.Left)
+		left := Eval(nodeT.Left, env)
 		if isError(left) {
 			return left
 		}
-		right := Eval(nodeT.Right)
+		right := Eval(nodeT.Right, env)
 		if isError(right) {
 			return right
 		}
 		return evalInfixExpression(nodeT.Operator, left, right)
 	case *ast.BlockStatement:
-		return evalBlockStatement(nodeT)
+		return evalBlockStatement(nodeT, env)
 	case *ast.IfExpression:
-		return evalIfExpression(nodeT)
+		return evalIfExpression(nodeT, env)
 	case *ast.ReturnStatement:
-		val := Eval(nodeT.ReturnValue)
+		val := Eval(nodeT.ReturnValue, env)
 		if isError(val) {
 			return val
 		}
 		return &object.ReturnValue{Value: val}
+	case *ast.LetStatement:
+		val := Eval(nodeT.Value, env)
+		if isError(val) {
+			return val
+		}
+		// 哈希映射
+		env.Set(nodeT.Name.Value, val)
+	case *ast.Identifier:
+		return evalIdentifier(nodeT, env)
+	case *ast.FunctionLiteral:
+		params := nodeT.Parameters
+		body := nodeT.Body
+		return &object.Function{Parameters: params, Body: body, Env: env}
+	case *ast.CallExpression:
+		function := Eval(nodeT.Function, env)
+		if isError(function) {
+			return function
+		}
+		args := evalExpressions(nodeT.Arguments, env)
+		if len(args) == 1 && isError(args[0]) {
+			return args[0]
+		}
+		return applyFunction(function, args)
 	}
 	return nil
 }
 
-func evalProgram(program *ast.Program) object.Object {
+func evalProgram(program *ast.Program, env *object.Environment) object.Object {
 	var result object.Object
 
 	for _, statement := range program.Statements {
-		result = Eval(statement)
+		result = Eval(statement, env)
 
 		switch rt := result.(type) {
 		case *object.ReturnValue:
@@ -151,15 +174,15 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 	return FALSE
 }
 
-func evalIfExpression(ie *ast.IfExpression) object.Object {
-	condition := Eval(ie.Condition)
+func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Object {
+	condition := Eval(ie.Condition, env)
 	if isError(condition) {
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence)
+		return Eval(ie.Consequence, env)
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative)
+		return Eval(ie.Alternative, env)
 	} else {
 		return NULL
 	}
@@ -178,11 +201,11 @@ func isTruthy(obj object.Object) bool {
 	}
 }
 
-func evalBlockStatement(block *ast.BlockStatement) object.Object {
+func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) object.Object {
 	var result object.Object
 
 	for _, statement := range block.Statements {
-		result = Eval(statement)
+		result = Eval(statement, env)
 
 		if result != nil {
 			rt := result.Type()
@@ -203,4 +226,54 @@ func isError(obj object.Object) bool {
 		return obj.Type() == object.ERROR_OBJ
 	}
 	return false
+}
+
+func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
+	val, ok := env.Get(node.Value)
+	if !ok {
+		return newError("identifier not found: " + node.Value)
+	}
+	return val
+}
+
+func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Object {
+	var result []object.Object
+	for _, e := range exps {
+		evaluated := Eval(e, env)
+		if isError(evaluated) {
+			return []object.Object{evaluated}
+		}
+		result = append(result, evaluated)
+	}
+	return result
+}
+
+func applyFunction(fn object.Object, args []object.Object) object.Object {
+	function, ok := fn.(*object.Function)
+	if !ok {
+		return newError("not a function: %s", fn.Type())
+	}
+
+	extendedEnv := extendFunctionEnv(function, args)
+	evaluated := Eval(function.Body, extendedEnv)
+	return unWarpReturnValue(evaluated)
+}
+
+// 扩展的是定义函数时的环境，而不是当前环境。闭包得以实现
+func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
+	env := object.NewEnclosedEnvironment(fn.Env)
+
+	for paramIdx, param := range fn.Parameters {
+		// 为什么不是env.Set(param.Value,param)呢
+		env.Set(param.Value, args[paramIdx])
+	}
+	return env
+}
+
+// 解包是为了避免return向上冒泡，使外层函数停止取值
+func unWarpReturnValue(obj object.Object) object.Object {
+	if returnValue, ok := obj.(*object.ReturnValue); ok {
+		return returnValue.Value
+	}
+	return obj
 }
