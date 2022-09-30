@@ -18,6 +18,7 @@ const (
 	ERROR_OBJ        = "ERROR"
 	FUNCTION_OBJ     = "FUNCTION"
 	STRING_OBJ       = "STRING"
+	BUILTIN_OBJ      = "BUILTIN"
 )
 
 // 所有值都会封装到一个符合Object接口的结构体中
@@ -25,6 +26,9 @@ type Object interface {
 	Type() ObjectType
 	Inspect() string
 }
+
+// 内置函数
+type BuiltinFunction func(args ...Object) Object
 
 // 整数
 // 源代码遇到整数字面量的时候，都需要将其转换为ast.IntegerLiteral，然后求值时转换为object.Integer,保存值并传递引用
@@ -131,4 +135,17 @@ func (s *String) Inspect() string {
 
 func (s *String) Type() ObjectType {
 	return STRING_OBJ
+}
+
+// 封装
+type Builtin struct {
+	Fn BuiltinFunction
+}
+
+func (b *Builtin) Type() ObjectType {
+	return BUILTIN_OBJ
+}
+
+func (b *Builtin) Inspect() string {
+	return "builtin function"
 }

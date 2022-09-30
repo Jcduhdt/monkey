@@ -244,11 +244,15 @@ func isError(obj object.Object) bool {
 }
 
 func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
-	val, ok := env.Get(node.Value)
-	if !ok {
-		return newError("identifier not found: " + node.Value)
+	if val, ok := env.Get(node.Value); ok {
+		return val
 	}
-	return val
+	// 如果当前环境没有发现对应的标识符，则在内置函数环境中查找
+	if builtin, ok := builtins[node.Value]; ok {
+		return builtin
+	}
+
+	return newError("identifier not found: " + node.Value)
 }
 
 func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Object {
@@ -264,14 +268,17 @@ func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Ob
 }
 
 func applyFunction(fn object.Object, args []object.Object) object.Object {
-	function, ok := fn.(*object.Function)
-	if !ok {
+
+	switch fnT := fn.(type) {
+	case *object.Function:
+		extendedEnv := extendFunctionEnv(fnT, args)
+		evaluated := Eval(fnT.Body, extendedEnv)
+		return unWarpReturnValue(evaluated)
+	case *object.Builtin:
+		return fnT.Fn(args...)
+	default:
 		return newError("not a function: %s", fn.Type())
 	}
-
-	extendedEnv := extendFunctionEnv(function, args)
-	evaluated := Eval(function.Body, extendedEnv)
-	return unWarpReturnValue(evaluated)
 }
 
 // 扩展的是定义函数时的环境，而不是当前环境。闭包得以实现
