@@ -1,6 +1,10 @@
 package evaluator
 
-import "monkey/object"
+import (
+	"fmt"
+
+	"monkey/object"
+)
 
 // 提供一种查找内置函数的方法
 // len:获取字符串或者数组的长度
@@ -8,6 +12,7 @@ import "monkey/object"
 // last:获取数组中的最后一个元素
 // rest:获取数组中除了第一个元素之外的元素组成的数组（新数组）
 // push:在数组最后追加一个元素（新数组）
+// puts:打印
 var builtins = map[string]*object.Builtin{
 	"len": &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
@@ -97,6 +102,14 @@ var builtins = map[string]*object.Builtin{
 			copy(newElements, arr.Elements)
 			newElements[length] = args[1]
 			return &object.Array{Elements: newElements}
+		},
+	},
+	"puts": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			for _, arg := range args {
+				fmt.Println(arg.Inspect())
+			}
+			return NULL
 		},
 	},
 }
