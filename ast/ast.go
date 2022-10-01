@@ -378,3 +378,85 @@ func (hl *HashLiteral) String() string {
 
 	return out.String()
 }
+
+type modifierFunc func(Node) Node
+
+// 只修改了子节点，没有修改父节点会导致String()输出不一致。
+// 实时创建新的词法单元，会丢失其来源信息
+func Modify(node Node, modifier modifierFunc) Node {
+	switch nodeT := node.(type) {
+	case *Program:
+		for i, statement := range nodeT.Statements {
+			nodeT.Statements[i], _ = Modify(statement, modifier).(Statement)
+		}
+	case *ExpressionStatement:
+		nodeT.Expression, _ = Modify(nodeT.Expression, modifier).(Expression)
+	case *InfixExpression:
+		nodeT.Left, _ = Modify(nodeT.Left, modifier).(Expression)
+		nodeT.Right, _ = Modify(nodeT.Right, modifier).(Expression)
+	case *PrefixExpression:
+		nodeT.Right, _ = Modify(nodeT.Right, modifier).(Expression)
+	case *IndexExpression:
+		nodeT.Left, _ = Modify(nodeT.Left, modifier).(Expression)
+		nodeT.Index, _ = Modify(nodeT.Index, modifier).(Expression)
+	case *IfExpression:
+		nodeT.Condition, _ = Modify(nodeT.Condition, modifier).(Expression)
+		nodeT.Consequence, _ = Modify(nodeT.Consequence, modifier).(*BlockStatement)
+		if nodeT.Alternative != nil {
+			nodeT.Alternative, _ = Modify(nodeT.Alternative, modifier).(*BlockStatement)
+		}
+	case *BlockStatement:
+		for i, _ := range nodeT.Statements {
+			nodeT.Statements[i], _ = Modify(nodeT.Statements[i], modifier).(Statement)
+		}
+	case *ReturnStatement:
+		nodeT.ReturnValue, _ = Modify(nodeT.ReturnValue, modifier).(Expression)
+	case *LetStatement:
+		nodeT.Value, _ = Modify(nodeT.Value, modifier).(Expression)
+	case *FunctionLiteral:
+		for i, _ := range nodeT.Parameters {
+			nodeT.Parameters[i], _ = Modify(nodeT.Parameters[i], modifier).(*Identifier)
+		}
+		nodeT.Body = Modify(nodeT.Body, modifier).(*BlockStatement)
+	case *ArrayLiteral:
+		for i, _ := range nodeT.Elements {
+			nodeT.Elements[i], _ = Modify(nodeT.Elements[i], modifier).(Expression)
+		}
+	case *HashLiteral:
+		newPairs := make(map[Expression]Expression)
+		for key, val := range nodeT.Pairs {
+			newKey, _ := Modify(key, modifier).(Expression)
+			newVal, _ := Modify(val, modifier).(Expression)
+			newPairs[newKey] = newVal
+		}
+		nodeT.Pairs = newPairs
+	}
+	return modifier(node)
+}
+
+type MacroLiteral struct {
+	Token      token.Token
+	Parameters []*Identifier
+	Body       *BlockStatement
+}
+
+func (ml *MacroLiteral) expressionNode() {}
+
+func (ml *MacroLiteral) TokenLiteral() string { return ml.Token.Literal }
+
+func (ml *MacroLiteral) String() string {
+	var out bytes.Buffer
+
+	params := []string{}
+	for _, p := range ml.Parameters {
+		params = append(params, p.String())
+	}
+
+	out.WriteString(ml.TokenLiteral())
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	out.WriteString(ml.Body.String())
+
+	return out.String()
+}

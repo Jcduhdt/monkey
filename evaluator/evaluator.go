@@ -65,6 +65,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		body := nodeT.Body
 		return &object.Function{Parameters: params, Body: body, Env: env}
 	case *ast.CallExpression:
+		// quote不对参数求值,quote只能使用一个参数
+		if nodeT.Function.TokenLiteral() == "quote" {
+			return quote(nodeT.Arguments[0], env)
+		}
+
 		function := Eval(nodeT.Function, env)
 		if isError(function) {
 			return function
@@ -379,4 +384,21 @@ func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Obje
 		pairs[hashed] = object.HashPair{Key: key, Value: value}
 	}
 	return &object.Hash{Pairs: pairs}
+}
+
+func DefineMacros(program *ast.Program, env *object.Environment) {
+	definitions := []int{}
+
+	// 查找宏定义并删除，记录在statements中的位置
+	for i, statement := range program.Statements {
+		if isMacroDefinition(statement) {
+			addMacro(statement, env)
+			definitions = append(definitions, i)
+		}
+	}
+
+	for i := len(definitions) - 1; i >= 0; i-- {
+		definitionIndex := definitions[i]
+		program.Statements = append(program.Statements[:definitionIndex], program.Statements[definitionIndex+1:]...)
+	}
 }
